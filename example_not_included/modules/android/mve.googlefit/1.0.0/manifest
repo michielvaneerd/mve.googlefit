@@ -1,0 +1,18 @@
+#
+# this is your module manifest and used by Titanium
+# during compilation, packaging, distribution, etc.
+#
+version: 1.0.0
+apiversion: 4
+architectures: arm64-v8a armeabi-v7a x86 x86_64
+description: MveGoogleFit
+author: Your Name
+license: Specify your license
+copyright: Copyright (c) 2020 by Your Company
+
+# these should not be edited
+name: MveGoogleFit
+moduleid: mve.googlefit
+guid: 98ef3702-97f6-438c-b970-b1e882774328
+platform: android
+minsdk: 9.0.3.GA
