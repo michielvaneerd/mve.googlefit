@@ -14,18 +14,18 @@ import org.appcelerator.kroll.KrollModule
 import org.appcelerator.kroll.annotations.Kroll
 
 import org.appcelerator.titanium.TiApplication
-import org.appcelerator.kroll.common.Log
+//import org.appcelerator.kroll.common.Log
 import org.appcelerator.kroll.common.TiConfig
 
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+//import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.fitness.FitnessOptions
 import com.google.android.gms.fitness.data.DataType
 
 import com.google.android.gms.fitness.Fitness
-import com.google.android.gms.fitness.data.Bucket
+//import com.google.android.gms.fitness.data.Bucket
 import com.google.android.gms.fitness.request.DataReadRequest
-import com.google.android.gms.fitness.result.DataReadResponse
+//import com.google.android.gms.fitness.result.DataReadResponse
 import com.google.android.gms.fitness.data.DataSource
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -34,25 +34,25 @@ import android.app.Activity
 import org.appcelerator.titanium.TiBaseActivity
 import org.appcelerator.titanium.util.TiConvert
 import org.appcelerator.kroll.KrollDict
-import com.google.android.gms.tasks.OnSuccessListener
-import com.google.android.gms.tasks.OnFailureListener
-import java.text.DateFormat
-import com.google.android.gms.fitness.data.DataSet
-import com.google.android.gms.fitness.data.Field
+//import com.google.android.gms.tasks.OnSuccessListener
+//import com.google.android.gms.tasks.OnFailureListener
+//import java.text.DateFormat
+//import com.google.android.gms.fitness.data.DataSet
+//import com.google.android.gms.fitness.data.Field
 import java.text.SimpleDateFormat
 import org.appcelerator.kroll.KrollFunction
 // If we implement OnActivityResultEvent interface, we can receive native OnActivityResult events.
 // See: https://github.com/appcelerator/titanium_mobile/blob/master/android/titanium/src/java/org/appcelerator/titanium/TiLifecycle.java
 import org.appcelerator.titanium.TiLifecycle.OnActivityResultEvent
 
-import com.google.android.gms.tasks.OnCompleteListener
+//import com.google.android.gms.tasks.OnCompleteListener
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.tasks.Task
-import com.google.android.gms.fitness.RecordingClient
+//import com.google.android.gms.fitness.RecordingClient
 import java.util.ArrayList
-import com.google.android.gms.tasks.Continuation
-import com.google.android.gms.fitness.data.Subscription
-import com.google.android.gms.fitness.data.DataPoint
+//import com.google.android.gms.tasks.Continuation
+//import com.google.android.gms.fitness.data.Subscription
+//import com.google.android.gms.fitness.data.DataPoint
 import java.util.HashMap
 
 
@@ -66,40 +66,65 @@ val DBG = TiConfig.LOGD
 @Kroll.module(name = "MveGoogleFit", id = "mve.googlefit")
 class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
-    private var fitnessOptions: FitnessOptions? = null
-    private var dataSource: DataSource? = null
     private var callbackAfterPermission: KrollFunction? = null
-    private val dataTypeHash: HashMap<String, DataTypeInfo> = HashMap<String, DataTypeInfo>()
-    private var activeDataTypes: Array<String>? = null
-    private var writeAccess = false
 
     internal class DataTypeInfo(dataType: DataType, aggregateDataType: DataType) {
         var dataType: DataType = dataType
         var aggregateDataType: DataType = aggregateDataType
     }
 
-    @Kroll.constant
-    val TYPE_STEP_COUNT_DELTA = "com.google.step_count.delta"
-
-    @Kroll.constant
-    val TYPE_MOVE_MINUTES = "com.google.active_minutes"
-
-    @Kroll.constant
-    val TYPE_CALORIES_EXPENDED = "com.google.calories.expended"
-
-    @Kroll.constant
-    val TYPE_HEART_POINTS = "com.google.heart_minutes"
-
-    @Kroll.constant
-    val TYPE_HEART_RATE_BPM = "com.google.heart_rate.bpm"
-
     companion object {
 
         private const val MY_PERMISSION_GOOGLE_SIGNIN = 2
 
+        private var dataSource: DataSource? = null
+        private val dataTypeHash: HashMap<String, DataTypeInfo> = HashMap<String, DataTypeInfo>()
+
+        @Kroll.constant
+        val TYPE_STEP_COUNT_DELTA = "com.google.step_count.delta"
+
+        @Kroll.constant
+        val TYPE_MOVE_MINUTES = "com.google.active_minutes"
+
+        @Kroll.constant
+        val TYPE_CALORIES_EXPENDED = "com.google.calories.expended"
+
+        @Kroll.constant
+        val TYPE_HEART_POINTS = "com.google.heart_minutes"
+
+        @Kroll.constant
+        val TYPE_HEART_RATE_BPM = "com.google.heart_rate.bpm"
+
+        @Kroll.constant
+        val TIME_FRAME_MINUTE = "minute"
+
+        @Kroll.constant
+        val TIME_FRAME_HOUR = "hour"
+
+        @Kroll.constant
+        val TIME_FRAME_DAY = "day"
+
+        @Kroll.constant
+        val TIME_FRAME_WEEK = "week"
+
         @JvmStatic
         @Kroll.onAppCreate
         fun onAppCreate(app: TiApplication) {
+
+            // https://developers.google.com/fit/faq#how_do_i_get_the_same_step_count_as_the_google_fit_app
+            // https://developers.google.com/fit/faq#values_for_stepdistanceactive_timecalories_do_not_match_those_of_fit_app
+            dataSource = DataSource.Builder()
+                    .setAppPackageName("com.google.android.gms")
+                    .setDataType(DataType.TYPE_STEP_COUNT_DELTA)
+                    .setType(DataSource.TYPE_DERIVED)
+                    .setStreamName("estimated_steps")
+                    .build()
+
+            dataTypeHash[TYPE_STEP_COUNT_DELTA] = DataTypeInfo(DataType.TYPE_STEP_COUNT_DELTA, DataType.AGGREGATE_STEP_COUNT_DELTA)
+            dataTypeHash[TYPE_MOVE_MINUTES] = DataTypeInfo(DataType.TYPE_MOVE_MINUTES, DataType.AGGREGATE_MOVE_MINUTES)
+            dataTypeHash[TYPE_CALORIES_EXPENDED] = DataTypeInfo(DataType.TYPE_CALORIES_EXPENDED, DataType.AGGREGATE_CALORIES_EXPENDED)
+            dataTypeHash[TYPE_HEART_POINTS] = DataTypeInfo(DataType.TYPE_HEART_POINTS, DataType.AGGREGATE_HEART_POINTS)
+            dataTypeHash[TYPE_HEART_RATE_BPM] = DataTypeInfo(DataType.TYPE_HEART_RATE_BPM, DataType.AGGREGATE_HEART_RATE_SUMMARY)
 
         }
 
@@ -127,51 +152,48 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
         }
     }
 
+//    @Kroll.method
+//    fun getDataTypes(): Array<Any> {
+//        return dataTypeHash.keys.toTypedArray()
+//    }
+
     /**
-     * This should be called at first.
+     * Returns FitnessOptions for specified data types and read/write access.
+     *
      * @param dataTypes: all datatypes you want to read and/or write
-     * @param write: true if you want to write (make sure you have the ACTIVITY_RECOGNITION permission!)
+     * @param write: true if you want to write
+     * @return options: FitnessOptions
      */
-    @Kroll.method
-    fun setDataTypes(dataTypes: Array<String>, write: Boolean) {
+    //@Kroll.method
+    private fun getFitnessOptions(dataTypes: Array<String>, write: Boolean): FitnessOptions {
 
-        dataTypeHash[TYPE_STEP_COUNT_DELTA] = DataTypeInfo(DataType.TYPE_STEP_COUNT_DELTA, DataType.AGGREGATE_STEP_COUNT_DELTA)
-        dataTypeHash[TYPE_MOVE_MINUTES] = DataTypeInfo(DataType.TYPE_MOVE_MINUTES, DataType.AGGREGATE_MOVE_MINUTES)
-        dataTypeHash[TYPE_CALORIES_EXPENDED] = DataTypeInfo(DataType.TYPE_CALORIES_EXPENDED, DataType.AGGREGATE_CALORIES_EXPENDED)
-        dataTypeHash[TYPE_HEART_POINTS] = DataTypeInfo(DataType.TYPE_HEART_POINTS, DataType.AGGREGATE_HEART_POINTS)
-        dataTypeHash[TYPE_HEART_RATE_BPM] = DataTypeInfo(DataType.TYPE_HEART_RATE_BPM, DataType.AGGREGATE_HEART_RATE_SUMMARY)
+        //activeDataTypes = dataTypes
+        //writeAccess = write
 
-        activeDataTypes = dataTypes
-        writeAccess = write
-
-        // https://developers.google.com/fit/faq#how_do_i_get_the_same_step_count_as_the_google_fit_app
-        // https://developers.google.com/fit/faq#values_for_stepdistanceactive_timecalories_do_not_match_those_of_fit_app
-        dataSource = DataSource.Builder()
-                .setAppPackageName("com.google.android.gms")
-                .setDataType(DataType.TYPE_STEP_COUNT_DELTA)
-                .setType(DataSource.TYPE_DERIVED)
-                .setStreamName("estimated_steps")
-                .build()
         val builder = FitnessOptions.builder()
-        for (name in activeDataTypes!!) {
+        for (name in dataTypes) {
             Utils.log("Add datatype $name")
             builder.addDataType(dataTypeHash[name]?.dataType!!, FitnessOptions.ACCESS_READ)
-            if (writeAccess) {
+            if (write) {
                 builder.addDataType(dataTypeHash[name]?.dataType!!, FitnessOptions.ACCESS_WRITE)
             }
             builder.addDataType(dataTypeHash[name]?.aggregateDataType!!, FitnessOptions.ACCESS_READ)
         }
-        fitnessOptions = builder.build()
+        return builder.build()
     }
 
     /**
      * Returns true if we already have the OAuth2 permissions.
+     *
+     * @param dataTypes: all datatypes you want to read and/or write
+     * @param write: true if you want to write
      */
     @Kroll.method
-    fun hasPermission(): Boolean {
+    fun hasPermissions(dataTypes: Array<String>, write: Boolean): Boolean {
+        val fitnessOptions = getFitnessOptions(dataTypes, write)
         val activity = TiApplication.getInstance().currentActivity
-        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions!!)
-        return GoogleSignIn.hasPermissions(account, fitnessOptions!!)
+        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions)
+        return GoogleSignIn.hasPermissions(account, fitnessOptions)
     }
 
     /**
@@ -179,15 +201,19 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
      * Will show a dialog where the user can agree to which data the app will retrieve.
      * Note: make sure you have set your app id in the google api console first, otherwise this won't work
      * and won't show a dialog.
+     *
+     * @param dataTypes: all datatypes you want to read and/or write
+     * @param write: true if you want to write
      * @param callback: Called after successful or unsuccessful request. See arg.error if there is an error.
      */
     @Kroll.method
-    fun requestPermission(callback: KrollFunction) {
+    fun requestPermissions(dataTypes: Array<String>, write: Boolean, callback: KrollFunction) {
+        val fitnessOptions = getFitnessOptions(dataTypes, write)
         val activity = TiApplication.getInstance().currentActivity
         callbackAfterPermission = callback
         (activity as TiBaseActivity).addOnActivityResultListener(this)
-        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions!!)
-        GoogleSignIn.requestPermissions(activity, MY_PERMISSION_GOOGLE_SIGNIN, account, fitnessOptions!!)
+        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions)
+        GoogleSignIn.requestPermissions(activity, MY_PERMISSION_GOOGLE_SIGNIN, account, fitnessOptions)
     }
 
     /**
@@ -202,6 +228,7 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
     /**
      * Remove subscriptions.
+     *
      * @param callback: Called after removing subscriptions. See arg.error if there is an error.
      */
     @Kroll.method
@@ -229,6 +256,7 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
     /**
      * Get subscriptions.
+     *
      * @param callback: Called with list of subscriptions in arg.subscriptions.
      */
     @Kroll.method
@@ -250,14 +278,18 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
     /**
      * Subscribe to all datatypes we set.
+     * No problem to call this more times - If the requested subscription already exists, the request will be a no-op.
+     * https://developers.google.com/android/reference/com/google/android/gms/fitness/RecordingClient
+     *
+     * @param dataTypes: all datatypes you want to read
      * @param callback: Called after subscribing. Check arg.error for error.
      */
     @Kroll.method
-    fun subscribe(callback: KrollFunction?) {
+    fun subscribe(dataTypes: Array<String>, callback: KrollFunction?) {
         val activity = TiApplication.getInstance().currentActivity
         val client = Fitness.getRecordingClient(activity, GoogleSignIn.getLastSignedInAccount(activity)!!)
         val tasks = ArrayList<Task<Void>>()
-        for (name in activeDataTypes!!) {
+        for (name in dataTypes) {
             tasks.add(client.subscribe(dataTypeHash[name]!!.dataType))
         }
         Tasks.whenAll(tasks)
@@ -274,16 +306,20 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
     /**
      * Gets data from specified time range.
-     * @param args: {start_date: Date, end_date: Date}
-     * @param callback: Called with object: {date: {dataType: {key: value}}}
+     *
+     * Note that it's the caller's responsibility to specify the correct startDate including time.
+     *
+     * @param args: {startDate: Date, endDate: Date, dataTypes: array of dataType constants, timeFrame: TimeFrame constant}
+     * @param callback: Called with object with "result" key.
      */
     @Kroll.method
     fun getData(args: KrollDict, callback: KrollFunction?) {
 
-        // Dus aan aanroeper verantwoordelijkheid om juiste date op te geven
-        // Dus ook uren, minuten en seconden!
-        val startDate = TiConvert.toDate(args["start_date"])
-        val endDate = TiConvert.toDate(args["end_date"])
+        // If you want buckets that are framed by full hours, make sure to send a Date
+        // that has minute and second set to 0 and
+        // If you want full days, make sure to set hour to 0 as well.
+        val startDate = TiConvert.toDate(args["startDate"])
+        val endDate = TiConvert.toDate(args["endDate"])
         val startCalendar = Calendar.getInstance()
         startCalendar.time = startDate
         //startCalendar[Calendar.HOUR_OF_DAY] = 0
@@ -293,29 +329,39 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
         //endCalendar[Calendar.HOUR_OF_DAY] = 24
         val endTimeMS = endCalendar.timeInMillis
 
-        // Method if you want to get a week of results:
-        // cal.add(Calendar.WEEK_OF_YEAR, -1);
+        val timeFrame = args["timeFrame"]
+
+        val dataTypesToRead = args.getStringArray("dataTypes")
+        Utils.log("dataTypesToRead = " + dataTypesToRead.size)
+        val fitnessOptions = getFitnessOptions(dataTypesToRead, false)
+
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
         Utils.log("Request fitness data from " + sdf.format(startCalendar.time).toString() + " up to " + sdf.format(endCalendar.time))
         val activity = TiApplication.getInstance().currentActivity
-        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions!!)
+        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions)
         val builder = DataReadRequest.Builder()
-        for (name in activeDataTypes!!) {
+        for (name in dataTypesToRead) {
             if (name == TYPE_STEP_COUNT_DELTA) {
                 builder.aggregate(dataSource, dataTypeHash[name]!!.aggregateDataType)
             } else {
                 builder.aggregate(dataTypeHash[name]!!.dataType, dataTypeHash[name]!!.aggregateDataType)
             }
         }
+        when (timeFrame) {
+            TIME_FRAME_MINUTE -> builder.bucketByTime(1, TimeUnit.MINUTES)
+            TIME_FRAME_HOUR -> builder.bucketByTime(1, TimeUnit.HOURS)
+            TIME_FRAME_DAY -> builder.bucketByTime(1, TimeUnit.DAYS)
+            TIME_FRAME_WEEK -> builder.bucketByTime(7, TimeUnit.DAYS)
+            //"monthly" -> builder.bucketByTime(1, TimeUnit.DAYS) // TODO: TimeUnit.MONTHS doesn't exist, so we have to manually compute this...
+            //"yearly" -> builder.bucketByTime(1, TimeUnit.DAYS) // TODO: TimeUnit.YEARS doesn't exist, so we have to manually compute this...
+        }
         val readRequest = builder
                 .setTimeRange(startTimeMS, endTimeMS, TimeUnit.MILLISECONDS)
-                .bucketByTime(1, TimeUnit.DAYS)
                 .build()
         Fitness.getHistoryClient(activity, account)
                 .readData(readRequest)
                 .addOnSuccessListener { dataReadResponse ->
 
-                    //val dict = KrollDict() // key = date, value = KrollDict(key = datatype, value = KrollDict(key = field, value = value))
                     val result = ArrayList<Any>()
 
                     val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
@@ -339,24 +385,7 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
                                 }
 
                                 for (point in dataSet.dataPoints) {
-                                    //val dataTypeName = point.dataType.name
-                                    //val dateString: String = dateFormat.format(point.getTimestamp(TimeUnit.MILLISECONDS))
-                                    //var dateDict: KrollDict? = null
-                                    //var dataTypeDict: KrollDict? = null
-                                    //if (dict.containsKey(dateString)) {
-                                    //    dateDict = dict[dateString] as KrollDict?
-                                    //} else {
-                                        //dateDict = KrollDict()
-                                        //dict[dateString] = dateDict
-                                    //}
-                                    //if (dateDict!!.containsKey(dataTypeName)) {
-                                    //    dataTypeDict = dateDict[dataTypeName] as KrollDict?
-                                    //} else {
-                                        //dataTypeDict = KrollDict()
-                                        //dateDict[dataTypeName] = dataTypeDict
-                                    //}
                                     for (field in point.dataType.fields) {
-                                        //dataTypeDict!![field.name] = point.getValue(field).toString()
                                         dataSetMap[field.name] = point.getValue(field).toString()
                                     }
                                 }
@@ -364,8 +393,6 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
                             result.add(bucketResult)
                         }
                     }
-
-                    Utils.log(result.toString())
 
                     val param = KrollDict()
                     param["result"] = result.toArray()
