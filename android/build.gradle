@@ -2,3 +2,9 @@ dependencies {
 	implementation 'com.google.android.gms:play-services-fitness:18.0.0'
     implementation 'com.google.android.gms:play-services-auth:18.0.0'
 }
+
+android {
+    packagingOptions {
+        exclude 'META-INF/module_release.kotlin_module'
+    }
+}
