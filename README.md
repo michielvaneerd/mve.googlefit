@@ -57,7 +57,11 @@ Retrieves data.
   * Required Date `endDate` - The end date for the data.
   * Required Array of strings `dataTypes` - Specify all the data types you are interested in. See below for all types.
   * Required String `timeFrame` - A string indicating the bucket time. Possible values: `minute`, `hour`, `day`, `week`.
-* Required Function `callback` - Will be called after success or error.
+* Required Function `callback` - Will be called after success or error. The argument of this callback has a `result` key which is an array with objects. Each object has:
+  * `startDate` - ISO8601 date string
+  * `endDate` - ISO8601 date string
+  * `dataSets` - Object with key = name of data type and value = Object of:
+      * key = name of field (for example `steps` or `duration` - this depends on the date type), value = value of field
 
 ## When to call `requestPermissions`
 
