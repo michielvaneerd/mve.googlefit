@@ -31,6 +31,9 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import android.content.Intent
 import android.app.Activity
+import android.util.Log
+import com.google.android.gms.fitness.data.Field
+import com.google.android.gms.fitness.request.SessionReadRequest
 import org.appcelerator.titanium.TiBaseActivity
 import org.appcelerator.titanium.util.TiConvert
 import org.appcelerator.kroll.KrollDict
@@ -73,6 +76,13 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
         var aggregateDataType: DataType = aggregateDataType
     }
 
+    internal class SessionInfo(id: Int, title: String, startTime: Long, endTime: Long) {
+        val id = id
+        val title = title
+        val startTime = startTime
+        val endTime = endTime
+    }
+
     companion object {
 
         private const val MY_PERMISSION_GOOGLE_SIGNIN = 2
@@ -94,6 +104,9 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
 
         @Kroll.constant
         val TYPE_HEART_RATE_BPM = "com.google.heart_rate.bpm"
+
+        @Kroll.constant
+        val TIME_FRAME_SECONDS = "seconds"
 
         @Kroll.constant
         val TIME_FRAME_MINUTE = "minute"
@@ -151,11 +164,6 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
             }
         }
     }
-
-//    @Kroll.method
-//    fun getDataTypes(): Array<Any> {
-//        return dataTypeHash.keys.toTypedArray()
-//    }
 
     /**
      * Returns FitnessOptions for specified data types and read/write access.
@@ -305,6 +313,91 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
     }
 
     /**
+     * Get all sessions between a specific timeframe
+     *
+     * @param args: {startDate: Date, endDate: Date, packageName: String (e.g. fi.polar.beat)}
+     * @param callback: Called with object with "result" key.
+     *
+     */
+    @Kroll.method
+    fun getSessions(args: KrollDict, callback: KrollFunction?) {
+
+        val packageName = TiConvert.toString(args["packageName"])
+        val startDate = TiConvert.toDate(args["startDate"])
+        val endDate = TiConvert.toDate(args["endDate"])
+        val startCalendar = Calendar.getInstance()
+        startCalendar.time = startDate
+        val startTimeMS = startCalendar.timeInMillis
+        val endCalendar = Calendar.getInstance()
+        endCalendar.time = endDate
+        val endTimeMS = endCalendar.timeInMillis
+
+        var mySessions = KrollDict()
+
+        val activity = TiApplication.getInstance().currentActivity
+
+        val readRequest = SessionReadRequest.Builder()
+                .setTimeInterval(startTimeMS, endTimeMS, TimeUnit.MILLISECONDS)
+                .read(DataType.TYPE_WORKOUT_EXERCISE)
+                .read(DataType.AGGREGATE_HEART_RATE_SUMMARY) // see: https://developers.google.com/fit/datatypes/aggregate#body
+                //==> 3 punten Each data point represents the user's average, maximum and minimum heart rate over the time period, in beats per minute.
+                // Hier staan dan ook de velden in die je kan gebruiken voor de fields property (3 stuks) - wel bug want min BPM heeft dezelfde waarde als de max BPM!
+                .readSessionsFromAllApps()
+                .enableServerQueries()
+                //.setSessionName("Jogging")
+                .build()
+
+        Fitness.getSessionsClient(activity, GoogleSignIn.getLastSignedInAccount(activity)!!)
+                .readSession(readRequest)
+                .addOnSuccessListener {
+                    var sessions = it.sessions
+                    var sessionCounter = 0
+                    for (session in sessions) {
+
+                        if (packageName != "") {
+                            if (packageName != session.appPackageName) {
+                                continue
+                            }
+                        }
+
+                        sessionCounter++
+
+                        var sessionInfo = KrollDict()
+                        sessionInfo["id"] = sessionCounter
+                        sessionInfo["name"] = session.name!!
+                        sessionInfo["startTime"] = Date(session.getStartTime(TimeUnit.MILLISECONDS))
+                        sessionInfo["endTime"] = Date(session.getEndTime(TimeUnit.MILLISECONDS))
+                        sessionInfo["hrAvg"] = 0
+                        sessionInfo["hrMax"] = 0
+
+                        mySessions[sessionCounter.toString()] = sessionInfo
+
+                        Utils.log(session.appPackageName + " - " + session.identifier!! + "; name = " + session.name!! + "; Start: " + Date(session.getStartTime(TimeUnit.MILLISECONDS)) + "; End: " + Date(session.getEndTime(TimeUnit.MILLISECONDS)) + "; desc = " + session.description)
+                        var dataSets = it.getDataSet(session)
+                        for (dataSet in dataSets) {
+                            Utils.log("dataset " + dataSet.dataType.toString())
+                            if (dataSet.dataType == DataType.AGGREGATE_HEART_RATE_SUMMARY) {
+                                val point = dataSet.dataPoints[0]
+                                sessionInfo["hrAvg"] = point.getValue(Field.FIELD_AVERAGE).asFloat()
+                                sessionInfo["hrMax"] = point.getValue(Field.FIELD_MAX).asFloat()
+                            }
+                        }
+                    }
+
+                    callback?.call(getKrollObject(), mySessions)
+
+                }
+                .addOnFailureListener {
+                    if (callback != null) {
+                        val dict = KrollDict()
+                        dict["error"] = it.message
+                        callback.call(getKrollObject(), dict)
+                    }
+                }
+
+    }
+
+    /**
      * Gets data from specified time range.
      *
      * Note that it's the caller's responsibility to specify the correct startDate including time.
@@ -348,6 +441,7 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
             }
         }
         when (timeFrame) {
+            TIME_FRAME_SECONDS -> builder.bucketByTime(1, TimeUnit.SECONDS)
             TIME_FRAME_MINUTE -> builder.bucketByTime(1, TimeUnit.MINUTES)
             TIME_FRAME_HOUR -> builder.bucketByTime(1, TimeUnit.HOURS)
             TIME_FRAME_DAY -> builder.bucketByTime(1, TimeUnit.DAYS)
@@ -356,6 +450,7 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
             //"yearly" -> builder.bucketByTime(1, TimeUnit.DAYS) // TODO: TimeUnit.YEARS doesn't exist, so we have to manually compute this...
         }
         val readRequest = builder
+                .enableServerQueries()
                 .setTimeRange(startTimeMS, endTimeMS, TimeUnit.MILLISECONDS)
                 .build()
         Fitness.getHistoryClient(activity, account)
@@ -393,6 +488,124 @@ class MveGoogleFitModule : KrollModule(), OnActivityResultEvent {
                             result.add(bucketResult)
                         }
                     }
+
+                    val param = KrollDict()
+                    param["result"] = result.toArray()
+
+                    callback?.call(getKrollObject(), param)
+
+                    // We also can fire an event:
+                    // fireEvent("stepsresponse", ob);
+                }
+                .addOnFailureListener { e ->
+                    if (callback != null) {
+                        val dict = KrollDict()
+                        dict["error"] = e.message
+                        callback.call(getKrollObject(), dict)
+                    }
+                }
+    }
+
+    @Kroll.method
+    fun getDataFromSession(args: KrollDict, callback: KrollFunction?) {
+
+        val startDate = TiConvert.toDate(args["startDate"])
+        val endDate = TiConvert.toDate(args["endDate"])
+        val startCalendar = Calendar.getInstance()
+        startCalendar.time = startDate
+        val startTimeMS = startCalendar.timeInMillis
+        val endCalendar = Calendar.getInstance()
+        endCalendar.time = endDate
+        val endTimeMS = endCalendar.timeInMillis
+
+        val timeFrame = args["timeFrame"]
+
+        val dataTypesToRead = args.getStringArray("dataTypes")
+        Utils.log("dataTypesToRead = " + dataTypesToRead.size)
+        val fitnessOptions = getFitnessOptions(dataTypesToRead, false)
+
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+        Utils.log("Request fitness data from " + sdf.format(startCalendar.time).toString() + " up to " + sdf.format(endCalendar.time))
+        val activity = TiApplication.getInstance().currentActivity
+        val account = GoogleSignIn.getAccountForExtension(activity, fitnessOptions)
+        val builder = DataReadRequest.Builder()
+
+        for (name in dataTypesToRead) {
+            builder.read(dataTypeHash[name]!!.dataType)
+        }
+
+        when (timeFrame) {
+            TIME_FRAME_SECONDS -> builder.bucketByTime(1, TimeUnit.SECONDS)
+            TIME_FRAME_MINUTE -> builder.bucketByTime(1, TimeUnit.MINUTES) // je MOET MINUTE opgeven voor HR BPM! Ook als je deze per seconde wil uitlezen!
+            TIME_FRAME_HOUR -> builder.bucketByTime(1, TimeUnit.HOURS)
+            TIME_FRAME_DAY -> builder.bucketByTime(1, TimeUnit.DAYS)
+            TIME_FRAME_WEEK -> builder.bucketByTime(7, TimeUnit.DAYS)
+            //"monthly" -> builder.bucketByTime(1, TimeUnit.DAYS) // TODO: TimeUnit.MONTHS doesn't exist, so we have to manually compute this...
+            //"yearly" -> builder.bucketByTime(1, TimeUnit.DAYS) // TODO: TimeUnit.YEARS doesn't exist, so we have to manually compute this...
+        }
+        val readRequest = builder
+                //.bucketByTime(1, TimeUnit.MINUTES) // Dit moet ik zetten en ook op 1 MINUTE (ik denk omdat ik HR in BPM vraag?), nog uitzoeken...
+                .enableServerQueries()
+                .setTimeRange(startTimeMS, endTimeMS, TimeUnit.MILLISECONDS)
+                .build()
+        Fitness.getHistoryClient(activity, account)
+                .readData(readRequest)
+                .addOnSuccessListener { dataReadResponse ->
+
+                    val result = ArrayList<Any>() // array van KrollDicts met  {start: DAte(), end: Date(), value: value} dus ik wil hier maar 1 dataset hebben!
+
+                    val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+
+                    if (dataReadResponse.buckets.size > 0) {
+
+                        // Elke bucket representeert hier een minuut (als we bucketByTime op 1 MINUTE zetten)
+                        for (bucket in dataReadResponse.buckets) {
+
+                            // Elke bucket heeft 1 dataset als we ook maar 1 datatype opriepen, zoals HR BPM
+
+                            val dataSets = bucket.dataSets
+
+                            //var bucketResult = KrollDict()
+                            //bucketResult["startDate"] = dateFormat.format(bucket.getStartTime(TimeUnit.MILLISECONDS))
+                            //bucketResult["endDate"] = dateFormat.format(bucket.getEndTime(TimeUnit.MILLISECONDS))
+                            //var dataSetsMap = KrollDict()
+                            //bucketResult["dataSets"] = dataSetsMap
+
+                            for (dataSet in dataSets) {
+
+                                // Elke data set heeft 59 points die elk een seconde representeren
+                                // Omdat we hier geen aggregate doen, krijg ik al deze punten hier.
+
+                                //var dataSetMap = KrollDict()
+                                //dataSetsMap[dataSet.dataType.name] = dataSetMap
+
+                                if (dataSet.dataPoints.size == 0) {
+                                    continue
+                                }
+
+                                for (point in dataSet.dataPoints) {
+
+                                    var pointsMap = KrollDict()
+                                    pointsMap["startDate"] = Date(point.getStartTime(TimeUnit.MILLISECONDS))
+                                    pointsMap["endDate"] = Date(point.getEndTime(TimeUnit.MILLISECONDS))
+
+                                    for (field in point.dataType.fields) {
+                                        // bpm is naam van field.
+                                        Utils.log("Field ${field.name}: value = ${point.getValue(field)}")
+                                        pointsMap[field.name] = point.getValue(field).toString()
+                                        //dataSetMap[field.name] = point.getValue(field).toString()
+                                    }
+
+                                    result.add(pointsMap)
+
+
+                                }
+                            }
+                            //result.add(bucketResult)
+                        }
+                    }
+
+                    Utils.log(result.toString())
 
                     val param = KrollDict()
                     param["result"] = result.toArray()

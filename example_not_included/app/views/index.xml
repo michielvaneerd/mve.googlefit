@@ -1,5 +1,8 @@
 <Alloy>
-	<Window backgroundColor="white">
-		<Label color="black" id="label" onClick="doClick">Hello, World</Label>
+	<Window backgroundColor="white" layout="vertical">
+		<Button top="20" onClick="doClick">Get data</Button>
+		<Button top="6" onClick="getSessionsClick">Get sessions</Button>
+		<TextField left="10" right="10" top="6" backgroundColor="yellow" id="sessionId" />
+		<Button top="6" onClick="getSessionClick">Get session data</Button>
 	</Window>
 </Alloy>

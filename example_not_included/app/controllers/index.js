@@ -1,6 +1,8 @@
 const moment = require("/alloy/moment");
 const googlefitness = require("mve.googlefit");
 
+let mySessions = null;
+
 // The datatypes we want to read.
 const fitOptions = {
 	dataTypes: [googlefitness.TYPE_STEP_COUNT_DELTA, googlefitness.TYPE_MOVE_MINUTES, googlefitness.TYPE_CALORIES_EXPENDED,
@@ -9,6 +11,35 @@ const fitOptions = {
 }
 
 var permissionChecked = false;
+
+function getSessionClick() {
+	
+	const sessionId = $.sessionId.value;
+
+	if (!sessionId) {
+		alert("Enter session id");
+	}
+
+	if (mySessions === null || Object.keys(mySessions).length === 0 || !(sessionId in mySessions)) {
+		alert("No sessions");
+		return;
+	}
+
+	const session = mySessions[sessionId];
+
+	googlefitness.getDataFromSession({
+		startDate: session.startTime,
+		endDate: session.endTime,
+		dataTypes: [googlefitness.TYPE_HEART_RATE_BPM],
+		timeFrame: googlefitness.TIME_FRAME_MINUTE, // necessary for HR BPM even if you want them in seconds.
+		//aggregate: false
+	}, function(eData) {
+		//console.log(eData);
+		eData.result.forEach(function(point) {
+			console.log(point.startDate + ": " + point.bpm);
+		})
+	});
+}
 
 function getFitData() {
 
@@ -35,6 +66,19 @@ function getFitData() {
 		});
 	});
 
+}
+
+function getSessionsClick() {
+	requestPermission(fitOptions.dataTypes, fitOptions.write, function() {
+		googlefitness.getSessions({
+			packageName: "fi.polar.beat",
+			startDate: moment().subtract(7, 'd').hours(0).minutes(0).seconds(0).toDate(),
+			endDate: new Date(),
+		}, function(eSessions) {
+			mySessions = eSessions;
+			console.log(mySessions);
+		});
+	});
 }
 
 function doClick(e) {
@@ -64,8 +108,8 @@ function subscribe(dataTypes, callback) {
 
 // Start permission requests + subscriptions.
 function requestPermission(dataTypes, write, callback) {
-	if (Ti.Platform.Android.API_LEVEL >= 29 && !Ti.Android.hasPermission("android.permission.ACTIVITY_RECOGNITION")) {
-		Ti.Android.requestPermissions("android.permission.ACTIVITY_RECOGNITION", function (response) {
+	if (Ti.Platform.Android.API_LEVEL >= 29 && (!Ti.Android.hasPermission("android.permission.ACTIVITY_RECOGNITION") || !Ti.Android.hasPermission("android.permission.ACCESS_FINE_LOCATION"))) {
+		Ti.Android.requestPermissions(["android.permission.ACTIVITY_RECOGNITION", "android.permission.ACCESS_FINE_LOCATION"], function (response) {
 			if (response.success) {
 				requestPermission(dataTypes, write, callback);
 			} else {

@@ -49,6 +49,8 @@
       		<uses-permission android:name="android.gms.permission.ACTIVITY_RECOGNITION"/>
       		<!-- For Android 10 and up: -->
       		<uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+			<!-- ACCESS_FINE_LOCATION is needed to read sessions -->  
+			<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 		</manifest>
 	</android>
 	<modules>
